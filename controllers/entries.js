@@ -1,6 +1,3 @@
-// Can pass null as a field when using find()
-// Use the "params : {entererName : entererNameId, entryDate : entryDateId} from the req object as the parameters
-
 const Entry = require('../models/LogEntry')
 const {StatusCodes} = require('http-status-codes')
 // const {BadRequestError, NotFoundError} = require('../errors')
@@ -11,12 +8,29 @@ const getAllEntries = async (req, res) => {
 }
 
 const getEntries = async (req, res) => {
-    const {params : {entryDate : entryDateId, enterer : entererId, productName : productNameId}} = req
-    const entries = await Entry.find({entryDateId, entererId, productNameId}).sort('createdAt')
+    const {startEntryDate, endEntryDate, enterer, productName} = req.query // Will handle logical errors like start > end in front end
+    const userQuery = []
+    if (startEntryDate) {
+        if (endEntryDate)
+            query.push({$and : [{createdAt : {$gte: new Date(startEntryDate)}}, {createdAt : {$lte: new Date(endEntryDate)}}]})
+        else
+            query.push({createdAt : {$gte: new Date(startEntryDate)}})
+    }
+    else if (endEntryDate) {
+        query.push({createdAt : {$lte: new Date(endEntryDate)}})
+    }
+    if (enterer) {
+        query.push({entererName : new RegExp(enterer, 'i')})
+    }
+    if (productName) {
+        query.push({product : productName})
+    }
+    const query = userQuery.length ? {$and : userQuery} : {}
+    const entries = await Entry.find(query).sort('createdAt')
     // if (!entries) {
     //     throw new NotFoundError("No entries found.")
     // }
-    res.status(StatusCodes.OK).json({entries})
+    res.status(StatusCodes.OK).json({entries, count: entries.length})
 }
 
 const createEntry = async (req, res) => {
@@ -25,9 +39,8 @@ const createEntry = async (req, res) => {
 }
 
 const updateEntry = async (req, res) => {
-    const {params : {entryDate : entryDateId, enterer : entererId}} = req
-    const query = {entryDate : entryDateId, enterer : entererId}
-    const entry = await Entry.findOneAndUpdate(query, req.body, {new: true, runValidators:true})
+    const {entryDate} = req.query
+    const entry = await Entry.findOneAndUpdate({createdAt : entryDate}, req.body, {new: true, runValidators:true})
     // if (!entry) {
     //     throw new NotFoundError(`No entry found`)
     // }
@@ -35,9 +48,8 @@ const updateEntry = async (req, res) => {
 }
 
 const deleteEntry = async (req, res) => { // Delete by date only
-   const {params : {entryDate : entryDateId}} = req
-   const query = {entryDate : entryDateId}
-   const entry = await Entry.findOneAndDelete(query)
+   const {entryDate} = req.query
+   const entry = await Entry.findOneAndDelete({createdAt : entryDate})
 //    if (!entry) {
 //     throw new NotFoundError("No entries found with that date, so could not be deleted.")
 //    }

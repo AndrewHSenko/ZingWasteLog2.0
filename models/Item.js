@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const ProductSchema = new mongoose.Schema({
+const ItemSchema = new mongoose.Schema({
     name: {
         type: String,
         required: [true, 'Must provide name!'],
@@ -15,4 +15,4 @@ const ProductSchema = new mongoose.Schema({
     {timestamps : true} // Records createdAt and updatedAt
 )
 
-module.exports = mongoose.model('Product', ProductSchema)
+module.exports = mongoose.model('Item', ItemSchema)

@@ -8,7 +8,7 @@ const LogEntrySchema = new mongoose.Schema({
     },
     product: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'Product',
+        ref: 'Item',
         required: [true, 'Please enter the name of the ingredient/product.'] 
     },
     productQuantity: {
