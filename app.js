@@ -10,7 +10,7 @@ const entriesRouter = require('./routes/entries')
 app.use(express.json())
 
 app.use('/api/v1/items', itemsRouter)
-app.use('/api/v1/entries', entriesRouter)
+app.use('/api/v1', entriesRouter)
 
 const port = process.env.PORT || 4000; // temporary
 

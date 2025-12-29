@@ -9,7 +9,8 @@ const getAllItems = async (req, res) => {
 
 const searchItem = async (req, res) => {
     const {iname} = req.query
-    const item = await Item.findOne({name : iname})
+    const escapedName = iname.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    const item = await Item.findOne({name : {$regex : escapedName, $options : "i"}})
     // if (!entries) {
     //     throw new NotFoundError("No entries found.")
     // }

@@ -1,4 +1,5 @@
 const Entry = require('../models/LogEntry')
+const Item = require('../models/Item')
 const {StatusCodes} = require('http-status-codes')
 // const {BadRequestError, NotFoundError} = require('../errors')
 
@@ -10,46 +11,46 @@ const getAllEntries = async (req, res) => {
 const getEntries = async (req, res) => {
     try {
         const {startEntryDate, endEntryDate, enterer, productName} = req.query
-        const userQuery = []
-        const entryDateQuery = []
-        let startDate = null
-        let endDate = null
+        const userQuery = {}
+        if (startEntryDate || endEntryDate) {
+            userQuery.createdAt = {} // Necessary from a recursive bug from using multiple createdAt query paths with an $and
+        }
         if (startEntryDate) {
-            startDate = new Date(startEntryDate)
-            if (!isNaN(startDate.getTime())) {
-                entryDateQuery.push({createdAt : {$gte: startDate}})
-            }
-            else {
+            const startDate = new Date(startEntryDate)
+            if (isNaN(startDate.getTime())) {
                 return res.status(400).json({ error: 'Invalid start date' })
-                // throw new NotFoundError('Start date invalid')
+                // throw some error
             }
+            userQuery.createdAt.$gte = startDate
         }
         if (endEntryDate) {
-            endDate = new Date(endEntryDate)
-            if (!isNaN(endDate.getTime())) { // Just an end date
-                entryDateQuery.push({createdAt : {$lte: endDate}})
-            }
-            else
+            const endDate = new Date(endEntryDate)
+            if (isNaN(endDate.getTime())) { // Just an end date
                 return res.status(400).json({ error: 'Invalid end date' })
                 // throw new NotFoundError('Start date invalid')
-        }
-        if (startDate && endDate) {
-            if (startDate > endDate) {
-                return res.status(400).json({ error: 'Invalid start and end date' })
-                // throw new NotFoundError('Start date is greater than the end date')
             }
+            userQuery.createdAt.$lte = endDate
         }
-        if (entryDateQuery.length) {
-            userQuery.push({$and : userQuery})
+        if (userQuery.createdAt && userQuery.createdAt.$gte && userQuery.createdAt.$lte && userQuery.createdAt.$gte > userQuery.createdAt.$lte) {
+            return res.status(400).json({ error: 'Invalid start and end date' })
         }
         if (enterer) {
-            userQuery.push({entererName : new RegExp(enterer, 'i')})
+            if (enterer.length > 24) {
+                return res.status(400).json({ error: "Enterer name too long"}) // Will change
+            }
+            const escapedEnterer = enterer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+            userQuery.entererName = {$regex : escapedEnterer, $options : "i"}
         }
         if (productName) {
-            userQuery.push({product : new RegExp(productName, 'i')})
+            if (productName.length > 64) { // Will change
+                return res.status(400).json({ error: "Product name too long"})
+            }
+            const escapedProduct = productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+            const items = await Item.find({name : {$regex : escapedProduct, $options : "i"}})
+            userQuery.product = {$in : items.map(i => i._id)}
         }
-        const query = userQuery.length ? {$and : userQuery} : {}
-        const entries = await Entry.find(query).sort('createdAt')
+        const query = Object.keys(userQuery).length ? userQuery : {}
+        const entries = await Entry.find(query).sort('createdAt').lean()
         // if (!entries) {
         //     throw new NotFoundError("No entries found.")
         // }

@@ -5,6 +5,6 @@ const {createEntry, getAllEntries, getEntries, updateEntry, deleteEntry} = requi
 
 router.route('/').post(createEntry).get(getAllEntries)
 router.route('/search').get(getEntries)
-router.route('/:id').patch(updateEntry).delete(deleteEntry)
+router.route('/:entryId').patch(updateEntry).delete(deleteEntry)
 
 module.exports = router
