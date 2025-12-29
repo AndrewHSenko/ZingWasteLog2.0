@@ -15,4 +15,4 @@ const ItemSchema = new mongoose.Schema({
     {timestamps : true} // Records createdAt and updatedAt
 )
 
-module.exports = mongoose.model('Item', ItemSchema)
+module.exports = mongoose.model('Item', ItemSchema, 'Items')

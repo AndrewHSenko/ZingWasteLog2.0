@@ -19,4 +19,4 @@ const LogEntrySchema = new mongoose.Schema({
     {timestamps : true} // Records createdAt and updatedAt
 )
 
-module.exports = mongoose.model('LogEntry', LogEntrySchema)
+module.exports = mongoose.model('LogEntry', LogEntrySchema, 'Entries')

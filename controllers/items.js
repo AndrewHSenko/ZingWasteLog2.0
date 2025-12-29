@@ -1,6 +1,3 @@
-// Can pass null as a field when using find()
-// Use the "params : {entererName : entererNameId, entryDate : entryDateId} from the req object as the parameters
-
 const Item = require('../models/Item')
 const {StatusCodes} = require('http-status-codes')
 // const {BadRequestError, NotFoundError} = require('../errors')
@@ -39,7 +36,7 @@ const deleteItem = async (req, res) => {
 //    if (!deletedItem) {
 //     throw new NotFoundError("Item not found, so not deleted.")
 //    }
-   res.status(StatusCodes.NO_CONTENT).send()
+   res.status(StatusCodes.NO_CONTENT).send({ deleted: true })
 }
 
 module.exports = {
