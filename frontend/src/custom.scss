@@ -1,0 +1,34 @@
+$primary-color: #f56422;
+$secondary-color: #ec783d;
+$success-color: #198754;
+$danger-color: #bd2d3c;
+$warning-color: #4d302c;
+$info-color: #2596be;
+$light-color: #f7f7f7;
+$dark-color: #2a2f34;
+
+@use "../node_modules/bootstrap/scss/bootstrap" as * with (
+  $primary: $primary-color,
+  $secondary: $secondary-color,
+  $success: $success-color,
+  $danger: $danger-color,
+  $warning: $warning-color,
+  $info: $info-color,
+  $light: $light-color,
+  $dark: $dark-color,
+  $theme-colors: (
+    "primary": $primary-color,
+    "secondary": $secondary-color,
+    "success": $success-color,
+    "danger": $danger-color,
+    "warning": $warning-color,
+    "info": $info-color,
+    "light": $light-color,
+    "dark": $dark-color,
+  )
+);
+// For the record, this is dumb. Bootstrap does not allow for @use which Sass now prefers, so this is the workaround. I prefer @import where you don't have to define all the theme colors explicitly. Alas.
+
+p {
+    margin: 0;
+}
