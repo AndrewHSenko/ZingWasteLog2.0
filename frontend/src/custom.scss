@@ -1,11 +1,22 @@
-$primary-color: #f56422;
+$primary-color: #c65327;
 $secondary-color: #ec783d;
-$success-color: #198754;
-$danger-color: #bd2d3c;
+$success-color: #0f4a3b;
+$danger-color: #d2232a;
 $warning-color: #4d302c;
 $info-color: #2596be;
 $light-color: #f7f7f7;
-$dark-color: #2a2f34;
+$dark-color: #3b3b3b;
+
+$sizes: (
+  25: 25%,
+  33: 33.333%,
+  50: 50%,
+  66: 66.666%,
+  75: 75%,
+  88: 88%,
+  100: 100%,
+  auto: auto,
+);
 
 @use "../node_modules/bootstrap/scss/bootstrap" as * with (
   $primary: $primary-color,
@@ -27,8 +38,62 @@ $dark-color: #2a2f34;
     "dark": $dark-color,
   )
 );
-// For the record, this is dumb. Bootstrap does not allow for @use which Sass now prefers, so this is the workaround. I prefer @import where you don't have to define all the theme colors explicitly. Alas.
 
-p {
+@each $size, $value in $sizes {
+  .w-#{$size} {
+    width: $value !important;
+  }
+}
+
+@each $breakpoint in map-keys($grid-breakpoints) {
+  @include media-breakpoint-up($breakpoint) {
+
+    @each $display, $value in $display-font-sizes {
+      .display-#{$breakpoint}-#{$display} {
+        font-size: $value !important;
+        font-weight: $display-font-weight;
+        line-height: $display-line-height;
+      }
+    }
+
+    @each $size, $value in $font-sizes {
+      .fs-#{$breakpoint}-#{$size} {
+        font-size: $value !important;
+      }
+    }
+
+    .text-#{$breakpoint}-wrap {
+      white-space: normal !important;
+    }
+    .text-#{$breakpoint}-nowrap {
+      white-space: nowrap !important;
+    }
+    .text-#{$breakpoint}-truncate {
+      overflow: hidden !important;
+      text-overflow: ellipsis !important;
+      white-space: nowrap !important;
+    }
+
+    @each $size, $value in $sizes {
+      .w-#{$breakpoint}-#{$size} {
+        width: $value !important;
+      }
+    }
+  }
+}
+
+p, h5 {
     margin: 0;
+}
+
+.btn:hover {
+    background-color: $secondary-color;
+    color: $light-color;
+    border-radius: 5px;
+}
+
+.logo {
+    width: 50vw;
+    min-width: 50px;
+    height: auto;
 }
