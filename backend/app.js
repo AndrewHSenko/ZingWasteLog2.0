@@ -21,7 +21,8 @@ const start = async () => {
         console.log(`Server is listening on port ${port}...`)
       );
     } catch (error) {
-      console.log(error);
+      console.error(error);
+      process.exit(1); // otherwise the process lingers with the port closed, looking like a hang
     }
   };
   

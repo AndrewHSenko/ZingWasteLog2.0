@@ -15,6 +15,12 @@ const LogEntrySchema = new mongoose.Schema({
         type: Number, // Will handle non-numeric entries with middleware
         required: [true, 'Please enter the amount wasted.'],
         min: [0.001, 'Must be more than 0, duh.'] // Default, will be handled pre-emptively with middleware
+    },
+    notes: {
+        type: String, // Optional free text about the entry
+        trim: true, // trims surrounding whitespace
+        maxlength: [500, 'Notes must be 500 characters or fewer.'],
+        default: ''
     }},
     {timestamps : true} // Records createdAt and updatedAt
 )

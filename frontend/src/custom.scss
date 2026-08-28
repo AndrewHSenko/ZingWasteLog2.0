@@ -1,5 +1,5 @@
-$primary-color: #c65327;
-$secondary-color: #ec783d;
+$primary-color: #00274c;
+$secondary-color: #ffcb05;
 $success-color: #0f4a3b;
 $danger-color: #d2232a;
 $warning-color: #4d302c;
@@ -88,8 +88,14 @@ p, h5 {
 
 .btn:hover {
     background-color: $secondary-color;
-    color: $light-color;
+    color: #fff;
+    border-color: $secondary-color;
     border-radius: 5px;
+}
+
+// The header sits on blue, so its links read white at rest.
+header .btn {
+    color: $light-color;
 }
 
 .logo {

@@ -4,8 +4,10 @@ import z_logo from '../assets/z_logo.png'
 
 const Header = () => {
 
+  // data-bs-theme makes the navbar's own bits (notably the mobile toggler icon)
+  // render light against the blue header.
   return (
-    <header className="sticky-top z-3 bg-primary">
+    <header className="sticky-top z-3 bg-primary" data-bs-theme="dark">
             <nav className="navbar navbar-expand-lg w-100 py-0">
                 <div className="container-fluid mx-4">
                   <div className="d-flex flex-column align-items-center justify-content-center ms-md-4">
