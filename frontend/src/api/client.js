@@ -17,7 +17,19 @@ const request = async (path, options) => {
     throw new Error(detail || `Request failed (${res.status} ${res.statusText})`)
   }
 
-  return res.status === 204 ? null : res.json()
+  if (res.status === 204) return null
+
+  // A deploy without an /api rewrite serves index.html for API paths with a 200,
+  // so the !res.ok branch above never fires. Check the type before parsing,
+  // otherwise this surfaces as "Unexpected token '<!doctype'".
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!contentType.includes('application/json')) {
+    throw new Error(
+      'The API returned HTML instead of JSON — the backend is not reachable at /api.'
+    )
+  }
+
+  return res.json()
 }
 
 const post = (path, body) =>
