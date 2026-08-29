@@ -3,7 +3,6 @@
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {
-      "$comment": "Everything EXCEPT /api falls through to the SPA. Excluding /api explicitly rather than relying on the function being matched first — a catch-all that swallowed /api is what broke the deploy in the first place.",
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
