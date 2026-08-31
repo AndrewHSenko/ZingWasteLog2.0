@@ -1,6 +1,9 @@
 # Local
 .env
 
+# Claude
+CLAUDE.md
+
 # Logs
 logs
 *.log
