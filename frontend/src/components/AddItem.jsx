@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useForm, useWatch } from 'react-hook-form'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import toast from 'react-hot-toast'
 
 import { getItems } from '../api/client.js'
+import ItemCombobox from './ItemCombobox.jsx'
 
 const AddItem = ({ onAdd }) => {
   const [items, setItems] = useState([])
@@ -57,20 +58,22 @@ const AddItem = ({ onAdd }) => {
 
       <div className="mb-3">
         <label htmlFor="product" className="form-label">Item</label>
-        {/* A select carries the item's _id as its value, which is what LogEntry.product needs. */}
-        <select
-          id="product"
-          className={`form-select ${errors.product ? 'is-invalid' : ''}`}
-          {...register('product', { required: 'Please choose an item.' })}
-        >
-          <option value="">Choose an item...</option>
-          {items.map((item) => (
-            <option key={item._id} value={item._id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-        <div className="invalid-feedback">{errors.product?.message}</div>
+        {/* Controlled rather than registered: the combobox holds the item's _id, which
+            is what LogEntry.product needs, while showing the item's name. */}
+        <Controller
+          control={control}
+          name="product"
+          rules={{ required: 'Please choose an item.' }}
+          render={({ field, fieldState }) => (
+            <ItemCombobox
+              inputId="product"
+              items={items}
+              value={field.value}
+              onChange={field.onChange}
+              error={fieldState.error?.message}
+            />
+          )}
+        />
       </div>
 
       <div className="mb-3">

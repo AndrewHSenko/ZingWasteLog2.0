@@ -103,3 +103,23 @@ header .btn {
     min-width: 50px;
     height: auto;
 }
+
+// A fixed column for the entries-list caret, so an item name sits in the same place
+// whether its row shows an open caret, a closed one, or nothing at all. Left to the
+// glyphs, ▸ and ▾ need not share an advance width and the name would shift on expand.
+.caret {
+    display: inline-block;
+    width: 1rem;
+    text-align: center;
+}
+
+// The item search list overlays the form rather than pushing it down, so cap its
+// height and let it scroll — on a phone an unbounded 200-item list would run off
+// the screen with the keyboard up.
+.item-options {
+    max-height: 15rem;
+
+    li {
+        cursor: pointer;
+    }
+}

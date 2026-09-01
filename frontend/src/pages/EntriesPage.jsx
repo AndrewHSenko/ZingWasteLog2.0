@@ -6,11 +6,59 @@ import { getItems, searchEntries } from '../api/client.js'
 
 const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
 
+// Everything one person logged on one day reads as a single log rather than a run of
+// near-identical rows. The day is the *local* calendar day: searchEntries pins the
+// From/To filters to the local day too, so a UTC key would group results outside the
+// range that was actually asked for.
+const groupEntries = (entries, itemsById) => {
+  const groups = new Map()
+
+  for (const entry of entries) {
+    const loggedAt = new Date(entry.createdAt)
+    const day = `${loggedAt.getFullYear()}-${loggedAt.getMonth()}-${loggedAt.getDate()}`
+    // The backend matches enterer with a case-insensitive regex, so "andrew" and
+    // "Andrew" come back together and must not split into two cards. The first
+    // spelling seen is the one displayed.
+    const key = `${day}|${entry.entererName.trim().toLowerCase()}`
+
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        key,
+        dayLabel: loggedAt.toLocaleDateString(undefined, { dateStyle: 'medium' }),
+        entererName: entry.entererName.trim(),
+        latest: 0,
+        rows: [],
+      }
+      groups.set(key, group)
+    }
+
+    // Entries store product as an ObjectId the backend does not populate, so names
+    // and units are resolved here.
+    const item = itemsById.get(entry.product)
+    group.rows.push({
+      ...entry,
+      itemName: item?.name ?? 'Unknown item',
+      quantityType: item?.quantityType ?? '',
+    })
+    group.latest = Math.max(group.latest, loggedAt.getTime())
+  }
+
+  // Newest day first; when two people logged on the same day, whoever logged most
+  // recently leads. Rows keep the order the backend sorted them in (createdAt asc).
+  return [...groups.values()].sort((a, b) => b.latest - a.latest)
+}
+
 const EntriesPage = () => {
   const [entries, setEntries] = useState([])
   const [items, setItems] = useState([])
   // Results stay hidden until a search is actually run.
   const [hasSearched, setHasSearched] = useState(false)
+  // Ids of the rows currently showing their reason. Held in React state rather than
+  // with Bootstrap's data-bs-toggle="collapse": Bootstrap mutates .show on the DOM
+  // directly, so a row reused across searches would keep an open state React never
+  // resets.
+  const [expandedRows, setExpandedRows] = useState(() => new Set())
 
   const {
     register,
@@ -20,13 +68,22 @@ const EntriesPage = () => {
     formState: { errors, isSubmitting },
   } = useForm({ defaultValues: EMPTY_FILTERS })
 
-  // Entries store product as an ObjectId and the backend does not populate it,
-  // so item names and units are resolved here.
   const itemsById = new Map(items.map((item) => [item._id, item]))
+  const groups = groupEntries(entries, itemsById)
+
+  const toggleRow = (id) =>
+    setExpandedRows((open) => {
+      const next = new Set(open)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
 
   const runSearch = async (filters) => {
     try {
-      setEntries(await searchEntries(filters))
+      const found = await searchEntries(filters)
+      // A new result set must not arrive with rows already expanded.
+      setExpandedRows(new Set())
+      setEntries(found)
       setHasSearched(true)
     } catch (err) {
       toast.error(err.message)
@@ -44,14 +101,9 @@ const EntriesPage = () => {
   const onClear = () => {
     reset(EMPTY_FILTERS)
     setEntries([])
+    setExpandedRows(new Set())
     setHasSearched(false)
   }
-
-  const formatDate = (value) =>
-    new Date(value).toLocaleString(undefined, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
 
   return (
     <div className="container py-4">
@@ -139,35 +191,75 @@ const EntriesPage = () => {
 
         {hasSearched && (
           <>
-            <h5 className="mb-2">Results ({entries.length})</h5>
+            <h5 className="mb-2">
+              Results ({entries.length} {entries.length === 1 ? 'entry' : 'entries'} in{' '}
+              {groups.length} {groups.length === 1 ? 'log' : 'logs'})
+            </h5>
             {!entries.length && (
               <p className="text-muted">No entries match those filters.</p>
             )}
           </>
         )}
 
-        <ul className="list-group">
-          {entries.map((entry) => {
-            const item = itemsById.get(entry.product)
-            return (
-              <li key={entry._id} className="list-group-item">
-                <div className="d-flex justify-content-between">
-                  <span>{item?.name ?? 'Unknown item'}</span>
-                  <span className="text-muted">
-                    {entry.productQuantity} {item?.quantityType ?? ''}
-                  </span>
-                </div>
-                <div className="d-flex justify-content-between">
-                  <small className="text-muted">{entry.entererName}</small>
-                  <small className="text-muted">{formatDate(entry.createdAt)}</small>
-                </div>
-                {entry.notes && (
-                  <small className="text-muted fst-italic d-block mt-1">{entry.notes}</small>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+        {groups.map((group) => (
+          <div key={group.key} className="card mt-3">
+            <div className="card-header d-flex justify-content-between">
+              <span>{group.dayLabel}</span>
+              <span className="text-muted">{group.entererName}</span>
+            </div>
+
+            <ul className="list-group list-group-flush">
+              {group.rows.map((row) => {
+                const isOpen = expandedRows.has(row._id)
+                const amount = `${row.productQuantity} ${row.quantityType}`
+
+                // With no note there is nothing to reveal, so the row stays inert
+                // rather than offering a click that does nothing.
+                if (!row.notes) {
+                  return (
+                    <li
+                      key={row._id}
+                      className="list-group-item d-flex justify-content-between"
+                    >
+                      <span>
+                        {/* Empty, but still holds the caret column open so item names
+                            line up whether or not a row has a reason. */}
+                        <span aria-hidden="true" className="caret me-2" />
+                        {row.itemName}
+                      </span>
+                      <span className="text-muted">{amount}</span>
+                    </li>
+                  )
+                }
+
+                return (
+                  <li key={row._id} className="list-group-item p-0">
+                    {/* list-group-item-action rather than .btn: custom.scss repaints
+                        every .btn yellow on hover. */}
+                    <button
+                      type="button"
+                      className="list-group-item-action d-flex justify-content-between align-items-center w-100 px-3 py-2 border-0 bg-transparent"
+                      onClick={() => toggleRow(row._id)}
+                      aria-expanded={isOpen}
+                      aria-controls={`reason-${row._id}`}
+                    >
+                      <span>
+                        <span aria-hidden="true" className="caret me-2">
+                          {isOpen ? '▾' : '▸'}
+                        </span>
+                        {row.itemName}
+                      </span>
+                      <span className="text-muted">{amount}</span>
+                    </button>
+                    <div id={`reason-${row._id}`} hidden={!isOpen} className="px-3 pb-2 ms-4">
+                      <small className="text-muted fst-italic">{row.notes}</small>
+                    </div>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ))}
       </div>
     </div>
   )
