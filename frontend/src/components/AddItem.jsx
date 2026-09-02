@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import toast from 'react-hot-toast'
 
@@ -7,6 +7,16 @@ import ItemCombobox from './ItemCombobox.jsx'
 
 const AddItem = ({ onAdd }) => {
   const [items, setItems] = useState([])
+  // Staged rows only need a key unique within this page session: it is React's list key
+  // and the handle PendingItems passes back to onRemove, and it never reaches the
+  // backend — LandingPage's submitAll picks out entererName/product/productQuantity/
+  // notes and drops the rest. A counter cannot restart underneath the pending list,
+  // because LandingPage renders this form for as long as that list exists.
+  //
+  // Deliberately not crypto.randomUUID: it exists only in a secure context, so it is
+  // undefined when the app is opened over a plain-HTTP LAN address for phone testing.
+  // It threw there, inside handleSubmit, which swallowed it and made Add look dead.
+  const nextRowKey = useRef(0)
 
   const {
     register,
@@ -32,8 +42,16 @@ const AddItem = ({ onAdd }) => {
   // list is what actually writes to the backend.
   const onSubmit = (values) => {
     const item = items.find((candidate) => candidate._id === values.product)
+    // Deleted between page load and submit. Without this the next line throws inside
+    // handleSubmit, which swallows it: no row, no reset, no error, just a dead button.
+    if (!item) {
+      toast.error('That item is no longer available — choose it again.')
+      return
+    }
+
+    nextRowKey.current += 1
     onAdd({
-      key: crypto.randomUUID(),
+      key: `row-${nextRowKey.current}`,
       ...values,
       itemName: item.name,
       quantityType: item.quantityType,
@@ -42,8 +60,10 @@ const AddItem = ({ onAdd }) => {
     reset({ entererName: values.entererName, product: '', productQuantity: '', notes: '' })
   }
 
+  // handleSubmit is bound inside the event rather than during render: onSubmit reads
+  // the key-counter ref, and handing that out at render time trips react-hooks/refs.
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate>
+    <form onSubmit={(event) => handleSubmit(onSubmit)(event)} noValidate>
       <h2 className="mb-3">Waste Log</h2>
 
       <div className="mb-3">
@@ -85,6 +105,8 @@ const AddItem = ({ onAdd }) => {
             id="productQuantity"
             type="number"
             step="any"
+            // Without this iOS offers the plain number pad, with no decimal point.
+            inputMode="decimal"
             className={`form-control ${errors.productQuantity ? 'is-invalid' : ''}`}
             {...register('productQuantity', {
               required: 'Please enter the amount wasted.',

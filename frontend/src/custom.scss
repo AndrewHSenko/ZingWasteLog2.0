@@ -86,11 +86,15 @@ p, h5 {
     margin: 0;
 }
 
-.btn:hover {
-    background-color: $secondary-color;
-    color: #fff;
-    border-color: $secondary-color;
-    border-radius: 5px;
+// Guarded on a real pointer: with no cursor to move away, :hover sticks after a tap
+// and the last button pressed would stay yellow until something else was touched.
+@media (hover: hover) {
+    .btn:hover {
+        background-color: $secondary-color;
+        color: #fff;
+        border-color: $secondary-color;
+        border-radius: 5px;
+    }
 }
 
 // The header sits on blue, so its links read white at rest.
@@ -117,9 +121,73 @@ header .btn {
 // height and let it scroll — on a phone an unbounded 200-item list would run off
 // the screen with the keyboard up.
 .item-options {
-    max-height: 15rem;
+    // dvh follows the viewport the on-screen keyboard leaves behind; vh does not, so a
+    // flat 15rem list would run under the keyboard on a phone. No vh fallback: the
+    // minifier drops a duplicate declaration it considers universally supported, so
+    // one would not survive the build anyway. dvh needs Safari 15.4+ / Chrome 108+.
+    max-height: min(15rem, 45dvh);
 
     li {
         cursor: pointer;
+    }
+}
+
+// Bootstrap's min-vh-100 is 100vh, which on mobile is the viewport with the URL bar
+// hidden — so the page always ends up a little taller than the screen actually is.
+.min-h-dvh {
+    min-height: 100dvh;
+}
+
+// 44px is about the smallest control a finger hits reliably.
+.tap-target {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+}
+
+.combobox {
+    // Keep the text clear of the chevron and clear control laid over the field.
+    .form-control {
+        padding-right: 4.5rem;
+    }
+
+    // Bootstrap's own validation icon would land underneath the chevron.
+    .form-control.is-invalid {
+        background-image: none;
+    }
+}
+
+.combobox-actions {
+    top: 0;
+    right: 0;
+    height: 100%;
+}
+
+.combobox-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.5rem;
+    height: 100%;
+    border: 0;
+    background: none;
+    color: var(--bs-secondary-color);
+}
+
+.combobox-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.75rem;
+    height: 100%;
+    color: var(--bs-secondary-color);
+    // A tap on the arrow should land on the field behind it, not be swallowed here.
+    pointer-events: none;
+    transition: transform 0.15s ease-in-out;
+
+    &.is-open {
+        transform: rotate(180deg);
     }
 }

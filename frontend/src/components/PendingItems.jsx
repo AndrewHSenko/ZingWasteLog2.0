@@ -12,15 +12,15 @@ const PendingItems = ({ pendingItems, onRemove, onClear, onSubmit, isSubmitting 
       <ul className="list-group mb-3">
         {pendingItems.map((row) => (
           <li key={row.key} className="list-group-item">
-            <div className="d-flex justify-content-between align-items-center">
-              <span>{row.itemName}</span>
-              <span className="d-flex align-items-center gap-3">
-                <span className="text-muted">
+            <div className="d-flex justify-content-between align-items-center gap-2">
+              <span className="text-break">{row.itemName}</span>
+              <span className="d-flex align-items-center gap-2 flex-shrink-0">
+                <span className="text-muted text-nowrap">
                   {row.productQuantity} {row.quantityType}
                 </span>
                 <button
                   type="button"
-                  className="btn btn-sm p-1 lh-1"
+                  className="btn p-0 lh-1 tap-target"
                   onClick={() => onRemove(row.key)}
                   disabled={isSubmitting}
                   aria-label={`Remove ${row.itemName}`}
