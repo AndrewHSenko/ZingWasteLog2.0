@@ -221,9 +221,11 @@ const ItemsPage = () => {
                 const count = entryCounts.get(item._id) ?? 0
                 return (
                   <li key={item._id} className="list-group-item">
-                    <div className="d-flex justify-content-between">
-                      <span>{item.name}</span>
-                      <span className="text-muted">{item.quantityType}</span>
+                    <div className="d-flex justify-content-between gap-2">
+                      <span className="text-break">{item.name}</span>
+                      <span className="text-muted text-nowrap flex-shrink-0">
+                        {item.quantityType}
+                      </span>
                     </div>
                     <small className="text-muted">
                       In {count} {count === 1 ? 'entry' : 'entries'}

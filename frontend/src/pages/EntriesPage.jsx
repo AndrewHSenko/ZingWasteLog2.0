@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useForm } from 'react-hook-form'
+import { Controller, useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 
 import { getItems, searchEntries } from '../api/client.js'
+import ItemCombobox from '../components/ItemCombobox.jsx'
 
 const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
 
@@ -65,6 +66,7 @@ const EntriesPage = () => {
     handleSubmit,
     reset,
     getValues,
+    control,
     formState: { errors, isSubmitting },
   } = useForm({ defaultValues: EMPTY_FILTERS })
 
@@ -127,26 +129,30 @@ const EntriesPage = () => {
 
           <div className="mb-3">
             <label htmlFor="productName" className="form-label">Item</label>
-            <input
-              id="productName"
-              className={`form-control ${errors.productName ? 'is-invalid' : ''}`}
-              list="entryItemNames"
-              placeholder="Any item"
-              {...register('productName', {
+            {/* freeText because the backend matches partial names server-side: typing
+                "chick" should still find every chicken item without picking one. */}
+            <Controller
+              control={control}
+              name="productName"
+              rules={{
                 maxLength: { value: 64, message: 'Item filter is limited to 64 characters.' },
-              })}
+              }}
+              render={({ field, fieldState }) => (
+                <ItemCombobox
+                  freeText
+                  inputId="productName"
+                  placeholder="Any item"
+                  items={items}
+                  value={field.value}
+                  onChange={field.onChange}
+                  error={fieldState.error?.message}
+                />
+              )}
             />
-            {/* Suggestions only — partial text matches server-side, so free text is valid too. */}
-            <datalist id="entryItemNames">
-              {items.map((item) => (
-                <option key={item._id} value={item.name} />
-              ))}
-            </datalist>
-            <div className="invalid-feedback">{errors.productName?.message}</div>
           </div>
 
           <div className="row">
-            <div className="col mb-3">
+            <div className="col-12 col-sm mb-3">
               <label htmlFor="startDate" className="form-label">From</label>
               <input
                 id="startDate"
@@ -155,7 +161,7 @@ const EntriesPage = () => {
                 {...register('startDate')}
               />
             </div>
-            <div className="col mb-3">
+            <div className="col-12 col-sm mb-3">
               <label htmlFor="endDate" className="form-label">To</label>
               <input
                 id="endDate"
@@ -203,9 +209,9 @@ const EntriesPage = () => {
 
         {groups.map((group) => (
           <div key={group.key} className="card mt-3">
-            <div className="card-header d-flex justify-content-between">
-              <span>{group.dayLabel}</span>
-              <span className="text-muted">{group.entererName}</span>
+            <div className="card-header d-flex justify-content-between gap-2">
+              <span className="text-nowrap">{group.dayLabel}</span>
+              <span className="text-muted text-break text-end">{group.entererName}</span>
             </div>
 
             <ul className="list-group list-group-flush">
@@ -219,15 +225,15 @@ const EntriesPage = () => {
                   return (
                     <li
                       key={row._id}
-                      className="list-group-item d-flex justify-content-between"
+                      className="list-group-item d-flex justify-content-between gap-2 py-3"
                     >
-                      <span>
+                      <span className="text-break">
                         {/* Empty, but still holds the caret column open so item names
                             line up whether or not a row has a reason. */}
                         <span aria-hidden="true" className="caret me-2" />
                         {row.itemName}
                       </span>
-                      <span className="text-muted">{amount}</span>
+                      <span className="text-muted text-nowrap flex-shrink-0">{amount}</span>
                     </li>
                   )
                 }
@@ -238,18 +244,18 @@ const EntriesPage = () => {
                         every .btn yellow on hover. */}
                     <button
                       type="button"
-                      className="list-group-item-action d-flex justify-content-between align-items-center w-100 px-3 py-2 border-0 bg-transparent"
+                      className="list-group-item-action d-flex justify-content-between align-items-center gap-2 w-100 px-3 py-3 border-0 bg-transparent"
                       onClick={() => toggleRow(row._id)}
                       aria-expanded={isOpen}
                       aria-controls={`reason-${row._id}`}
                     >
-                      <span>
+                      <span className="text-break text-start">
                         <span aria-hidden="true" className="caret me-2">
                           {isOpen ? '▾' : '▸'}
                         </span>
                         {row.itemName}
                       </span>
-                      <span className="text-muted">{amount}</span>
+                      <span className="text-muted text-nowrap flex-shrink-0">{amount}</span>
                     </button>
                     <div id={`reason-${row._id}`} hidden={!isOpen} className="px-3 pb-2 ms-4">
                       <small className="text-muted fst-italic">{row.notes}</small>
