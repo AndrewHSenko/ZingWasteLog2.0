@@ -78,6 +78,18 @@ const ItemCombobox = ({
     if (window.matchMedia('(hover: hover)').matches) inputRef.current?.focus()
   }
 
+  // The chevron mirrors the <select> it replaced: a second click puts the list away.
+  const toggle = () => {
+    if (isOpen) {
+      close()
+      return
+    }
+    setIsOpen(true)
+    // Same hover-only guard as `choose`: focusing on touch pops the keyboard over the
+    // options we just opened.
+    if (window.matchMedia('(hover: hover)').matches) inputRef.current?.focus()
+  }
+
   const clear = () => {
     onChange('')
     setDraft(null)
@@ -163,9 +175,20 @@ const ItemCombobox = ({
             &times;
           </button>
         )}
-        <span className={`combobox-chevron ${isOpen ? 'is-open' : ''}`} aria-hidden="true">
+        <button
+          type="button"
+          className={`combobox-chevron ${isOpen ? 'is-open' : ''}`}
+          // Keeps focus on the input, so closing is not undone by a blur/refocus
+          // reopening the list on the way back.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={toggle}
+          // The input is the accessible combobox and already reports aria-expanded;
+          // the arrow is decoration that happens to be clickable.
+          tabIndex={-1}
+          aria-hidden="true"
+        >
           ▾
-        </span>
+        </button>
       </div>
 
       {/* Bootstrap only reveals .invalid-feedback next to the .is-invalid control,

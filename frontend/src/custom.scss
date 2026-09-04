@@ -183,8 +183,9 @@ header .btn {
     min-width: 1.75rem;
     height: 100%;
     color: var(--bs-secondary-color);
-    // A tap on the arrow should land on the field behind it, not be swallowed here.
-    pointer-events: none;
+    border: 0;
+    background: none;
+    padding: 0;
     transition: transform 0.15s ease-in-out;
 
     &.is-open {
