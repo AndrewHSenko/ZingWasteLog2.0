@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import toast from 'react-hot-toast'
 
-import { getItems, createItem, searchEntries } from '../api/client.js'
+import { getItems, createItem, getEntryCounts } from '../api/client.js'
 
 const NO_FILTERS = { name: '', quantityType: '' }
 
 const ItemsPage = () => {
   const [mode, setMode] = useState('see')
   const [items, setItems] = useState([])
-  const [entries, setEntries] = useState([])
+  // { <itemId>: <count> }, tallied by the backend.
+  const [entryCounts, setEntryCounts] = useState({})
   const [appliedFilters, setAppliedFilters] = useState(NO_FILTERS)
   // Results stay hidden until a search is actually run.
   const [hasSearched, setHasSearched] = useState(false)
@@ -18,19 +19,11 @@ const ItemsPage = () => {
   const addForm = useForm({ defaultValues: { name: '', quantityType: '' } })
   const filterForm = useForm({ defaultValues: NO_FILTERS })
 
-  // There is no endpoint for "how many entries reference this item", so entries
-  // are counted here. Grouping by the product ObjectId keeps the count exact,
-  // rather than re-matching on name the way the backend's search does.
-  const entryCounts = entries.reduce((counts, entry) => {
-    counts.set(entry.product, (counts.get(entry.product) ?? 0) + 1)
-    return counts
-  }, new Map())
-
   const loadData = async () => {
     try {
-      const [loadedItems, loadedEntries] = await Promise.all([getItems(), searchEntries()])
+      const [loadedItems, loadedCounts] = await Promise.all([getItems(), getEntryCounts()])
       setItems(loadedItems)
-      setEntries(loadedEntries)
+      setEntryCounts(loadedCounts)
       setLoadError('')
     } catch (err) {
       setLoadError(err.message)
@@ -218,7 +211,7 @@ const ItemsPage = () => {
 
             <ul className="list-group">
               {visibleItems.map((item) => {
-                const count = entryCounts.get(item._id) ?? 0
+                const count = entryCounts[item._id] ?? 0
                 return (
                   <li key={item._id} className="list-group-item">
                     <div className="d-flex justify-content-between gap-2">

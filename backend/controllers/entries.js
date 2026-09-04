@@ -61,6 +61,19 @@ const getEntries = async (req, res) => {
     }
 }
 
+// How many entries reference each item. Done as an aggregation because the only
+// consumer, the items page, wants the tallies and not the 667 documents behind them —
+// fetching those to count them client-side moved ~146KB per search.
+const getEntryCounts = async (req, res) => {
+    const grouped = await Entry.aggregate([
+        { $group: { _id: '$product', count: { $sum: 1 } } },
+    ])
+    // Keyed by item id so a lookup is direct. An ObjectId key stringifies to the same
+    // hex the client already holds in item._id.
+    const counts = Object.fromEntries(grouped.map(({_id, count}) => [_id, count]))
+    res.status(StatusCodes.OK).json({counts})
+}
+
 const createEntry = async (req, res) => {
     const entry = await Entry.create(req.body)
     res.status(StatusCodes.CREATED).json({entry})
@@ -87,6 +100,7 @@ const deleteEntry = async (req, res) => { // Delete by date only
 module.exports = {
     getAllEntries,
     getEntries,
+    getEntryCounts,
     createEntry,
     updateEntry,
     deleteEntry

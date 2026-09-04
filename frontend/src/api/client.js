@@ -48,6 +48,10 @@ export const getEntries = async () => (await request('/')).entries
 
 export const createEntry = async (body) => (await post('/', body)).entry
 
+// { <itemId>: <number of entries> } — the items page needs the tallies, not the
+// entries themselves.
+export const getEntryCounts = async () => (await request('/counts')).counts
+
 // Filters map onto the query params backend/controllers/entries.js reads:
 // enterer, productName, startEntryDate, endEntryDate. Blank fields are dropped
 // so an empty form returns everything.
