@@ -11,7 +11,7 @@ const getAllEntries = async (req, res) => {
 
 const getEntries = async (req, res) => {
     try {
-        const {startEntryDate, endEntryDate, enterer, productName, productId} = req.query
+        const {startEntryDate, endEntryDate, enterer, productName, productIds} = req.query
         const userQuery = {}
         if (startEntryDate || endEntryDate) {
             userQuery.createdAt = {} // Necessary from a recursive bug from using multiple createdAt query paths with an $and
@@ -42,24 +42,40 @@ const getEntries = async (req, res) => {
             const escapedEnterer = enterer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
             userQuery.entererName = {$regex : escapedEnterer, $options : "i"}
         }
-        // An id comes from picking an item in the dropdown and means that one item, so it
-        // wins over the name beside it. The name path stays a partial match on purpose:
-        // typing "chick" should still find every chicken item.
-        if (productId) {
-            // Guard the cast: a CastError would reach the bare catch below and answer with
-            // a 500 and a JSON string instead of {error}.
-            if (!mongoose.isValidObjectId(productId)) {
-                return res.status(400).json({ error: 'Invalid product id' })
+        // Ids come from picking items in the dropdown and mean those exact items; a name
+        // still matches partially, so typing "chick" finds every chicken item. Both resolve
+        // to item ids and merge into one $in, letting a search ask for several specific
+        // items plus everything a fragment matches.
+        const productIdFilter = new Set()
+        // Tracked separately from the set's size: a name that matches no item must return
+        // no entries, not fall through to an unfiltered search.
+        const filteringByProduct = Boolean(productIds || productName)
+        if (productIds) {
+            // Tolerates repeated ?productIds= params as well as the comma-joined form the
+            // client sends.
+            const ids = [].concat(productIds).join(',').split(',').filter(Boolean)
+            if (ids.length > 200) { // Will change
+                return res.status(400).json({ error: "Too many items selected"})
             }
-            userQuery.product = productId
+            for (const id of ids) {
+                // Guard the cast: a CastError would reach the bare catch below and answer
+                // with a 500 and a JSON string instead of {error}.
+                if (!mongoose.isValidObjectId(id)) {
+                    return res.status(400).json({ error: "Invalid product id"})
+                }
+                productIdFilter.add(id)
+            }
         }
-        else if (productName) {
+        if (productName) {
             if (productName.length > 64) { // Will change
                 return res.status(400).json({ error: "Product name too long"})
             }
             const escapedProduct = productName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
             const items = await Item.find({name : {$regex : escapedProduct, $options : "i"}})
-            userQuery.product = {$in : items.map(i => i._id)}
+            for (const item of items) productIdFilter.add(item._id.toString())
+        }
+        if (filteringByProduct) {
+            userQuery.product = {$in : [...productIdFilter]}
         }
         const query = Object.keys(userQuery).length ? userQuery : {}
         const entries = await Entry.find(query).sort('createdAt').lean()

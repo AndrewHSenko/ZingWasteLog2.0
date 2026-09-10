@@ -4,16 +4,9 @@ import toast from 'react-hot-toast'
 
 import { getItems, searchEntries } from '../api/client.js'
 import ItemCombobox from '../components/ItemCombobox.jsx'
+import SelectedItems from '../components/SelectedItems.jsx'
 
-const EMPTY_FILTERS = {
-  enterer: '',
-  productName: '',
-  // Set only by picking an option, and cleared by any keystroke. Its presence is what
-  // tells the backend to match one exact item instead of every partial name match.
-  productId: '',
-  startDate: '',
-  endDate: '',
-}
+const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
 
 // Everything one person logged on one day reads as a single log rather than a run of
 // near-identical rows. The day is the *local* calendar day: searchEntries pins the
@@ -68,19 +61,32 @@ const EntriesPage = () => {
   // directly, so a row reused across searches would keep an open state React never
   // resets.
   const [expandedRows, setExpandedRows] = useState(() => new Set())
+  // Items picked from the dropdown. Kept out of the form because it is a list of
+  // objects rather than a field value, matching LandingPage's staged rows.
+  const [selectedItems, setSelectedItems] = useState([])
 
   const {
     register,
     handleSubmit,
     reset,
     getValues,
-    setValue,
     control,
     formState: { errors, isSubmitting },
   } = useForm({ defaultValues: EMPTY_FILTERS })
 
   const itemsById = new Map(items.map((item) => [item._id, item]))
   const groups = groupEntries(entries, itemsById)
+
+  // Selecting the same item twice is a no-op rather than a duplicate row.
+  const addSelectedItem = (item) =>
+    setSelectedItems((chosen) =>
+      chosen.some((picked) => picked._id === item._id) ? chosen : [...chosen, item]
+    )
+
+  const removeSelectedItem = (id) =>
+    setSelectedItems((chosen) => chosen.filter((picked) => picked._id !== id))
+
+  const clearSelectedItems = () => setSelectedItems([])
 
   const toggleRow = (id) =>
     setExpandedRows((open) => {
@@ -91,7 +97,10 @@ const EntriesPage = () => {
 
   const runSearch = async (filters) => {
     try {
-      const found = await searchEntries(filters)
+      const found = await searchEntries({
+        ...filters,
+        productIds: selectedItems.map((item) => item._id),
+      })
       // A new result set must not arrive with rows already expanded.
       setExpandedRows(new Set())
       setEntries(found)
@@ -111,6 +120,7 @@ const EntriesPage = () => {
 
   const onClear = () => {
     reset(EMPTY_FILTERS)
+    setSelectedItems([])
     setEntries([])
     setExpandedRows(new Set())
     setHasSearched(false)
@@ -139,7 +149,9 @@ const EntriesPage = () => {
           <div className="mb-3">
             <label htmlFor="productName" className="form-label">Item</label>
             {/* freeText because the backend matches partial names server-side: typing
-                "chick" should still find every chicken item without picking one. */}
+                "chick" and searching still finds every chicken item. Picking an option
+                instead stages that exact item in the box below; the backend unions the
+                two, so both can be used in one search. */}
             <Controller
               control={control}
               name="productName"
@@ -153,20 +165,26 @@ const EntriesPage = () => {
                   placeholder="Any item"
                   items={items}
                   value={field.value}
-                  // Any keystroke invalidates an earlier pick: only clicking an option
-                  // (or Enter on one) means "this exact item", and everything typed
-                  // stays a partial-name search.
-                  onChange={(next) => {
-                    field.onChange(next)
-                    setValue('productId', '')
+                  onChange={field.onChange}
+                  // choose() fires onChange(name) before onSelect, so blanking the field
+                  // here wins: a picked item lives in the box below, not in the input,
+                  // leaving it empty for the next pick.
+                  onSelect={(item) => {
+                    addSelectedItem(item)
+                    field.onChange('')
                   }}
-                  onSelect={(item) => setValue('productId', item._id)}
                   error={fieldState.error?.message}
                 />
               )}
             />
-            <input type="hidden" {...register('productId')} />
           </div>
+
+          <SelectedItems
+            items={selectedItems}
+            onRemove={removeSelectedItem}
+            onClear={clearSelectedItems}
+            disabled={isSubmitting}
+          />
 
           <div className="row">
             <div className="col-12 col-sm mb-3">
