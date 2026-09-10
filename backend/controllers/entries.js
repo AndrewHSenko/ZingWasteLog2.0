@@ -1,3 +1,4 @@
+const mongoose = require('mongoose')
 const Entry = require('../models/LogEntry')
 const Item = require('../models/Item')
 const {StatusCodes} = require('http-status-codes')
@@ -10,7 +11,7 @@ const getAllEntries = async (req, res) => {
 
 const getEntries = async (req, res) => {
     try {
-        const {startEntryDate, endEntryDate, enterer, productName} = req.query
+        const {startEntryDate, endEntryDate, enterer, productName, productId} = req.query
         const userQuery = {}
         if (startEntryDate || endEntryDate) {
             userQuery.createdAt = {} // Necessary from a recursive bug from using multiple createdAt query paths with an $and
@@ -41,7 +42,18 @@ const getEntries = async (req, res) => {
             const escapedEnterer = enterer.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
             userQuery.entererName = {$regex : escapedEnterer, $options : "i"}
         }
-        if (productName) {
+        // An id comes from picking an item in the dropdown and means that one item, so it
+        // wins over the name beside it. The name path stays a partial match on purpose:
+        // typing "chick" should still find every chicken item.
+        if (productId) {
+            // Guard the cast: a CastError would reach the bare catch below and answer with
+            // a 500 and a JSON string instead of {error}.
+            if (!mongoose.isValidObjectId(productId)) {
+                return res.status(400).json({ error: 'Invalid product id' })
+            }
+            userQuery.product = productId
+        }
+        else if (productName) {
             if (productName.length > 64) { // Will change
                 return res.status(400).json({ error: "Product name too long"})
             }

@@ -5,7 +5,15 @@ import toast from 'react-hot-toast'
 import { getItems, searchEntries } from '../api/client.js'
 import ItemCombobox from '../components/ItemCombobox.jsx'
 
-const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
+const EMPTY_FILTERS = {
+  enterer: '',
+  productName: '',
+  // Set only by picking an option, and cleared by any keystroke. Its presence is what
+  // tells the backend to match one exact item instead of every partial name match.
+  productId: '',
+  startDate: '',
+  endDate: '',
+}
 
 // Everything one person logged on one day reads as a single log rather than a run of
 // near-identical rows. The day is the *local* calendar day: searchEntries pins the
@@ -66,6 +74,7 @@ const EntriesPage = () => {
     handleSubmit,
     reset,
     getValues,
+    setValue,
     control,
     formState: { errors, isSubmitting },
   } = useForm({ defaultValues: EMPTY_FILTERS })
@@ -144,11 +153,19 @@ const EntriesPage = () => {
                   placeholder="Any item"
                   items={items}
                   value={field.value}
-                  onChange={field.onChange}
+                  // Any keystroke invalidates an earlier pick: only clicking an option
+                  // (or Enter on one) means "this exact item", and everything typed
+                  // stays a partial-name search.
+                  onChange={(next) => {
+                    field.onChange(next)
+                    setValue('productId', '')
+                  }}
+                  onSelect={(item) => setValue('productId', item._id)}
                   error={fieldState.error?.message}
                 />
               )}
             />
+            <input type="hidden" {...register('productId')} />
           </div>
 
           <div className="row">

@@ -11,6 +11,7 @@ const ItemCombobox = ({
   items,
   value,
   onChange,
+  onSelect,
   error,
   inputId,
   freeText = false,
@@ -75,6 +76,9 @@ const ItemCombobox = ({
   // and the click is what selects.
   const choose = (item) => {
     onChange(freeText ? item.name : item._id)
+    // After onChange, not before: in freeText mode the consumer clears its saved id on
+    // every value change, so a selection has to be announced last to survive.
+    onSelect?.(item)
     close()
   }
 
