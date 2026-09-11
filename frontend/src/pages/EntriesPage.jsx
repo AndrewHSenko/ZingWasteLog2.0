@@ -4,8 +4,24 @@ import toast from 'react-hot-toast'
 
 import { getItems, searchEntries } from '../api/client.js'
 import ItemCombobox from '../components/ItemCombobox.jsx'
+import { downloadCsv, toCsv } from '../utils/csv.js'
 
 const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
+
+const CSV_HEADERS = ['Date', 'Submitter', 'Item', 'Quantity', 'Notes']
+
+// Local calendar day, deliberately not toISOString(): that is UTC, so an entry logged at
+// 8pm Eastern would land on the following date — and disagree with both the date-range
+// filters and the grouped cards, which are local (see groupEntries).
+const toIsoDate = (value) => {
+  const at = new Date(value)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
+}
+
+// Deliberately module scope: react-hooks/purity flags a Date.now() call written inside
+// the component, since it cannot tell the enclosing handler only runs on click.
+const todayIso = () => toIsoDate(Date.now())
 
 // Everything one person logged on one day reads as a single log rather than a run of
 // near-identical rows. The day is the *local* calendar day: searchEntries pins the
@@ -73,6 +89,22 @@ const EntriesPage = () => {
   const itemsById = new Map(items.map((item) => [item._id, item]))
   const groups = groupEntries(entries, itemsById)
 
+  // Sorted off the raw entries rather than by flattening `groups`: the cards are
+  // newest-day-first but keep each day's rows in the backend's createdAt-ascending order,
+  // which would emit oldest-first within a day.
+  const csvRows = [...entries]
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map((entry) => {
+      const item = itemsById.get(entry.product)
+      return [
+        toIsoDate(entry.createdAt),
+        entry.entererName.trim(),
+        item?.name ?? 'Unknown item',
+        `${entry.productQuantity} ${item?.quantityType ?? ''}`.trim(),
+        entry.notes ?? '',
+      ]
+    })
+
   const toggleRow = (id) =>
     setExpandedRows((open) => {
       const next = new Set(open)
@@ -105,6 +137,16 @@ const EntriesPage = () => {
     setEntries([])
     setExpandedRows(new Set())
     setHasSearched(false)
+  }
+
+  // The button's disabled guard already rules out an empty export, so there is nothing
+  // to check here. toIsoDate is the same local-day helper the Date column uses, so the
+  // filename cannot disagree with the contents by a day.
+  const onExport = () => {
+    downloadCsv(`waste-log-${todayIso()}.csv`, toCsv(CSV_HEADERS, csvRows))
+    toast.success(
+      `Exported ${csvRows.length} ${csvRows.length === 1 ? 'entry' : 'entries'}.`
+    )
   }
 
   return (
@@ -191,6 +233,15 @@ const EntriesPage = () => {
               disabled={isSubmitting}
             >
               Clear
+            </button>
+            {/* type="button" keeps it from submitting the search form it sits inside. */}
+            <button
+              type="button"
+              className="btn btn-success ms-auto"
+              onClick={onExport}
+              disabled={isSubmitting || !entries.length}
+            >
+              Export CSV
             </button>
           </div>
         </form>
