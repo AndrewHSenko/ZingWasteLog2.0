@@ -147,6 +147,12 @@ header .btn {
     min-height: 2.75rem;
 }
 
+// The per-item totals under Results are the answer to the search, not a label on it,
+// so they get twice .badge's 0.75em. Padding is em-based in Bootstrap and scales with it.
+.badge-totals {
+    font-size: 1.3em;
+}
+
 .combobox {
     // Keep the text clear of the chevron and clear control laid over the field.
     .form-control {
