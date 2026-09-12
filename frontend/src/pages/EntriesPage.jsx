@@ -5,11 +5,33 @@ import toast from 'react-hot-toast'
 import { getItems, searchEntries } from '../api/client.js'
 import ItemCombobox from '../components/ItemCombobox.jsx'
 import { downloadCsv, toCsv } from '../utils/csv.js'
+import { downloadXlsx, headerCell, toDateCell } from '../utils/xlsx.js'
 import SelectedItems from '../components/SelectedItems.jsx'
 
 const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
 
 const CSV_HEADERS = ['Date', 'Submitter', 'Item', 'Quantity', 'Notes']
+
+// Six columns rather than the CSV's five: a real workbook can hold a numeric quantity, so
+// the unit splits off into its own column and the Quantity column becomes summable.
+const XLSX_COLUMNS = [
+  {
+    header: headerCell('Date'),
+    width: 12,
+    cell: (row) => ({ value: toDateCell(row.loggedAt), type: Date, format: 'yyyy-mm-dd' }),
+  },
+  { header: headerCell('Submitter'), width: 18, cell: (row) => ({ value: row.submitter }) },
+  { header: headerCell('Item'), width: 28, cell: (row) => ({ value: row.item }) },
+  {
+    header: headerCell('Quantity'),
+    width: 10,
+    // A real number so Excel can sum it, but displayed the way formatQuantity renders it
+    // on the page: grouped thousands, at most the schema's three decimals, no 25.000.
+    cell: (row) => ({ value: row.quantity, type: Number, format: '#,##0.###' }),
+  },
+  { header: headerCell('Unit'), width: 10, cell: (row) => ({ value: row.unit }) },
+  { header: headerCell('Notes'), width: 40, cell: (row) => ({ value: row.notes }) },
+]
 
 // Local calendar day, deliberately not toISOString(): that is UTC, so an entry logged at
 // 8pm Eastern would land on the following date — and disagree with both the date-range
@@ -23,6 +45,8 @@ const toIsoDate = (value) => {
 // Deliberately module scope: react-hooks/purity flags a Date.now() call written inside
 // the component, since it cannot tell the enclosing handler only runs on click.
 const todayIso = () => toIsoDate(Date.now())
+
+const exportedMessage = (count) => `Exported ${count} ${count === 1 ? 'entry' : 'entries'}.`
 
 // Everything one person logged on one day reads as a single log rather than a run of
 // near-identical rows. The day is the *local* calendar day: searchEntries pins the
@@ -117,6 +141,7 @@ const EntriesPage = () => {
   // directly, so a row reused across searches would keep an open state React never
   // resets.
   const [expandedRows, setExpandedRows] = useState(() => new Set())
+  const [isExporting, setIsExporting] = useState(false)
   // Items picked from the dropdown. Kept out of the form because it is a list of
   // objects rather than a field value, matching LandingPage's staged rows.
   const [selectedItems, setSelectedItems] = useState([])
@@ -148,21 +173,33 @@ const EntriesPage = () => {
 
   const clearSelectedItems = () => setSelectedItems([])
 
-  // Sorted off the raw entries rather than by flattening `groups`: the cards are
-  // newest-day-first but keep each day's rows in the backend's createdAt-ascending order,
-  // which would emit oldest-first within a day.
-  const csvRows = [...entries]
+  // One resolved row per entry, newest first, shared by both exports. Sorted off the raw
+  // entries rather than by flattening `groups`: the cards are newest-day-first but keep each
+  // day's rows in the backend's createdAt-ascending order, which would emit oldest-first
+  // within a day.
+  const exportRows = [...entries]
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
     .map((entry) => {
       const item = itemsById.get(entry.product)
-      return [
-        toIsoDate(entry.createdAt),
-        entry.entererName.trim(),
-        item?.name ?? 'Unknown item',
-        `${entry.productQuantity} ${item?.quantityType ?? ''}`.trim(),
-        entry.notes ?? '',
-      ]
+      return {
+        loggedAt: entry.createdAt,
+        submitter: entry.entererName.trim(),
+        item: item?.name ?? 'Unknown item',
+        quantity: entry.productQuantity,
+        unit: item?.quantityType ?? '',
+        notes: entry.notes ?? '',
+      }
     })
+
+  // CSV stays five columns with the quantity and unit combined, as it always was — plain
+  // text has no numeric cell to gain by splitting them.
+  const csvRows = exportRows.map((row) => [
+    toIsoDate(row.loggedAt),
+    row.submitter,
+    row.item,
+    `${row.quantity} ${row.unit}`.trim(),
+    row.notes,
+  ])
 
   const toggleRow = (id) =>
     setExpandedRows((open) => {
@@ -210,11 +247,23 @@ const EntriesPage = () => {
   // The button's disabled guard already rules out an empty export, so there is nothing
   // to check here. toIsoDate is the same local-day helper the Date column uses, so the
   // filename cannot disagree with the contents by a day.
-  const onExport = () => {
+  const onExportCsv = () => {
     downloadCsv(`waste-log-${todayIso()}.csv`, toCsv(CSV_HEADERS, csvRows))
-    toast.success(
-      `Exported ${csvRows.length} ${csvRows.length === 1 ? 'entry' : 'entries'}.`
-    )
+    toast.success(exportedMessage(exportRows.length))
+  }
+
+  // Unlike the CSV path this is async — the browser build zips in a Web Worker — so it
+  // needs a guard against a second click and a catch, or a failure would pass silently.
+  const onExportXlsx = async () => {
+    setIsExporting(true)
+    try {
+      await downloadXlsx(`waste-log-${todayIso()}.xlsx`, XLSX_COLUMNS, exportRows)
+      toast.success(exportedMessage(exportRows.length))
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   return (
@@ -306,7 +355,9 @@ const EntriesPage = () => {
             </div>
           </div>
 
-          <div className="d-flex gap-2">
+          {/* flex-wrap: four controls do not fit at phone width, and the exports should
+              drop to their own line rather than overflow the container. */}
+          <div className="d-flex flex-wrap gap-2">
             <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
               {isSubmitting ? 'Searching...' : 'Search'}
             </button>
@@ -318,14 +369,22 @@ const EntriesPage = () => {
             >
               Clear
             </button>
-            {/* type="button" keeps it from submitting the search form it sits inside. */}
+            {/* type="button" keeps these from submitting the search form they sit inside. */}
             <button
               type="button"
               className="btn btn-success ms-auto"
-              onClick={onExport}
-              disabled={isSubmitting || !entries.length}
+              onClick={onExportCsv}
+              disabled={isSubmitting || isExporting || !entries.length}
             >
               Export CSV
+            </button>
+            <button
+              type="button"
+              className="btn btn-success"
+              onClick={onExportXlsx}
+              disabled={isSubmitting || isExporting || !entries.length}
+            >
+              {isExporting ? 'Exporting...' : 'Export XLSX'}
             </button>
           </div>
         </form>
