@@ -1,6 +1,6 @@
 $primary-color: #00274c;
 $secondary-color: #ffcb05;
-$success-color: #0f4a3b;
+$success-color: #004c4b;
 $danger-color: #d2232a;
 $warning-color: #4d302c;
 $info-color: #2596be;
@@ -145,6 +145,12 @@ header .btn {
     justify-content: center;
     min-width: 2.75rem;
     min-height: 2.75rem;
+}
+
+// The per-item totals under Results are the answer to the search, not a label on it,
+// so they get twice .badge's 0.75em. Padding is em-based in Bootstrap and scales with it.
+.badge-totals {
+    font-size: 1.3em;
 }
 
 .combobox {

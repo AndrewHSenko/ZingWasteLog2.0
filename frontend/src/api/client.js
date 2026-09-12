@@ -53,12 +53,22 @@ export const createEntry = async (body) => (await post('/', body)).entry
 export const getEntryCounts = async () => (await request('/counts')).counts
 
 // Filters map onto the query params backend/controllers/entries.js reads:
-// enterer, productName, startEntryDate, endEntryDate. Blank fields are dropped
-// so an empty form returns everything.
-export const searchEntries = async ({ enterer, productName, startDate, endDate } = {}) => {
+// enterer, productName, productIds, startEntryDate, endEntryDate. Blank fields are
+// dropped so an empty form returns everything.
+export const searchEntries = async ({
+  enterer,
+  productName,
+  productIds,
+  startDate,
+  endDate,
+} = {}) => {
   const params = new URLSearchParams()
 
   if (enterer?.trim()) params.set('enterer', enterer.trim())
+  // Picked items are exact ids, typed text still matches partially, and the backend
+  // unions the two, so both can be sent together. Comma-joined because ids are hex:
+  // no escaping worry, a shorter URL, and no repeated-key array handling server-side.
+  if (productIds?.length) params.set('productIds', productIds.join(','))
   if (productName?.trim()) params.set('productName', productName.trim())
 
   // A date input yields "YYYY-MM-DD", which the backend turns into UTC midnight.

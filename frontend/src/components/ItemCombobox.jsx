@@ -11,6 +11,7 @@ const ItemCombobox = ({
   items,
   value,
   onChange,
+  onSelect,
   error,
   inputId,
   freeText = false,
@@ -68,14 +69,17 @@ const ItemCombobox = ({
     ? items.filter((item) => item.name.toLowerCase().includes(search))
     : items
 
+  // Focus is deliberately left wherever the click put it. Restoring it to the input
+  // would re-fire onFocus, which reopens the list — so the menu never actually closed
+  // on a pointer device. Don't reach for onMouseDown preventDefault on the option to
+  // keep focus instead: whether that still lets the click through varies by browser,
+  // and the click is what selects.
   const choose = (item) => {
     onChange(freeText ? item.name : item._id)
+    // After onChange, not before: in freeText mode the consumer clears its saved id on
+    // every value change, so a selection has to be announced last to survive.
+    onSelect?.(item)
     close()
-    // Put the cursor back where it was, rather than relying on a cancelled pointerdown
-    // to stop the blur in the first place — whether that still lets the click through
-    // varies by browser, and the click is what selects. Pointer devices only: on touch
-    // this would pop the keyboard straight back up.
-    if (window.matchMedia('(hover: hover)').matches) inputRef.current?.focus()
   }
 
   // The chevron mirrors the <select> it replaced: a second click puts the list away.
@@ -85,16 +89,14 @@ const ItemCombobox = ({
       return
     }
     setIsOpen(true)
-    // Same hover-only guard as `choose`: focusing on touch pops the keyboard over the
-    // options we just opened.
+    // Hover-only, as with every focus call in this file: on touch this pops the
+    // keyboard over the options we just opened.
     if (window.matchMedia('(hover: hover)').matches) inputRef.current?.focus()
   }
 
   const clear = () => {
     onChange('')
-    setDraft(null)
-    setActiveIndex(-1)
-    inputRef.current?.focus()
+    close()
   }
 
   const onKeyDown = (event) => {
@@ -178,8 +180,8 @@ const ItemCombobox = ({
         <button
           type="button"
           className={`combobox-chevron ${isOpen ? 'is-open' : ''}`}
-          // Keeps focus on the input, so closing is not undone by a blur/refocus
-          // reopening the list on the way back.
+          // Keeps focus in the input rather than dropping it on the arrow, so the
+          // list can be opened here and filtered by typing without a second click.
           onMouseDown={(event) => event.preventDefault()}
           onClick={toggle}
           // The input is the accessible combobox and already reports aria-expanded;

@@ -5,6 +5,7 @@ import toast from 'react-hot-toast'
 import { getItems, searchEntries } from '../api/client.js'
 import ItemCombobox from '../components/ItemCombobox.jsx'
 import { downloadCsv, toCsv } from '../utils/csv.js'
+import SelectedItems from '../components/SelectedItems.jsx'
 
 const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
 
@@ -66,6 +67,46 @@ const groupEntries = (entries, itemsById) => {
   return [...groups.values()].sort((a, b) => b.latest - a.latest)
 }
 
+// Per-item totals for the current result set: how much was wasted and across how many
+// entries. Items that were explicitly selected are seeded at zero so a filter that
+// matched nothing still reports on what it was asked about.
+const totalByItem = (entries, itemsById, selectedItems) => {
+  const totals = new Map()
+
+  const slotFor = (id, item) => {
+    let total = totals.get(id)
+    if (!total) {
+      total = {
+        _id: id,
+        // Same fallback as groupEntries: an entry can outlive the item it points at.
+        name: item?.name ?? 'Unknown item',
+        quantityType: item?.quantityType ?? '',
+        quantity: 0,
+        count: 0,
+      }
+      totals.set(id, total)
+    }
+    return total
+  }
+
+  for (const item of selectedItems) slotFor(item._id, item)
+
+  for (const entry of entries) {
+    const total = slotFor(entry.product, itemsById.get(entry.product))
+    total.quantity += entry.productQuantity
+    total.count += 1
+  }
+
+  // Biggest waste first, alphabetical on ties — which also sinks the zero rows to the end.
+  return [...totals.values()].sort(
+    (a, b) => b.quantity - a.quantity || a.name.localeCompare(b.name)
+  )
+}
+
+// Round to the schema's precision, drop trailing zeros, and group thousands: 25, not
+// 25.000; 1,234.5, not 1234.5000000001.
+const formatQuantity = (value) => Number(value.toFixed(3)).toLocaleString()
+
 const EntriesPage = () => {
   const [entries, setEntries] = useState([])
   const [items, setItems] = useState([])
@@ -76,6 +117,12 @@ const EntriesPage = () => {
   // directly, so a row reused across searches would keep an open state React never
   // resets.
   const [expandedRows, setExpandedRows] = useState(() => new Set())
+  // Items picked from the dropdown. Kept out of the form because it is a list of
+  // objects rather than a field value, matching LandingPage's staged rows.
+  const [selectedItems, setSelectedItems] = useState([])
+  // The item filter as it stood when the last search ran. Kept separate from selectedItems
+  // so editing the box afterwards does not rewrite the totals under results already shown.
+  const [searchedFilter, setSearchedFilter] = useState({ items: [], byItem: false })
 
   const {
     register,
@@ -88,6 +135,18 @@ const EntriesPage = () => {
 
   const itemsById = new Map(items.map((item) => [item._id, item]))
   const groups = groupEntries(entries, itemsById)
+  const totals = totalByItem(entries, itemsById, searchedFilter.items)
+
+  // Selecting the same item twice is a no-op rather than a duplicate row.
+  const addSelectedItem = (item) =>
+    setSelectedItems((chosen) =>
+      chosen.some((picked) => picked._id === item._id) ? chosen : [...chosen, item]
+    )
+
+  const removeSelectedItem = (id) =>
+    setSelectedItems((chosen) => chosen.filter((picked) => picked._id !== id))
+
+  const clearSelectedItems = () => setSelectedItems([])
 
   // Sorted off the raw entries rather than by flattening `groups`: the cards are
   // newest-day-first but keep each day's rows in the backend's createdAt-ascending order,
@@ -114,10 +173,17 @@ const EntriesPage = () => {
 
   const runSearch = async (filters) => {
     try {
-      const found = await searchEntries(filters)
+      const found = await searchEntries({
+        ...filters,
+        productIds: selectedItems.map((item) => item._id),
+      })
       // A new result set must not arrive with rows already expanded.
       setExpandedRows(new Set())
       setEntries(found)
+      setSearchedFilter({
+        items: selectedItems,
+        byItem: Boolean(selectedItems.length || filters.productName?.trim()),
+      })
       setHasSearched(true)
     } catch (err) {
       toast.error(err.message)
@@ -134,6 +200,8 @@ const EntriesPage = () => {
 
   const onClear = () => {
     reset(EMPTY_FILTERS)
+    setSelectedItems([])
+    setSearchedFilter({ items: [], byItem: false })
     setEntries([])
     setExpandedRows(new Set())
     setHasSearched(false)
@@ -172,7 +240,9 @@ const EntriesPage = () => {
           <div className="mb-3">
             <label htmlFor="productName" className="form-label">Item</label>
             {/* freeText because the backend matches partial names server-side: typing
-                "chick" should still find every chicken item without picking one. */}
+                "chick" and searching still finds every chicken item. Picking an option
+                instead stages that exact item in the box below; the backend unions the
+                two, so both can be used in one search. */}
             <Controller
               control={control}
               name="productName"
@@ -187,11 +257,25 @@ const EntriesPage = () => {
                   items={items}
                   value={field.value}
                   onChange={field.onChange}
+                  // choose() fires onChange(name) before onSelect, so blanking the field
+                  // here wins: a picked item lives in the box below, not in the input,
+                  // leaving it empty for the next pick.
+                  onSelect={(item) => {
+                    addSelectedItem(item)
+                    field.onChange('')
+                  }}
                   error={fieldState.error?.message}
                 />
               )}
             />
           </div>
+
+          <SelectedItems
+            items={selectedItems}
+            onRemove={removeSelectedItem}
+            onClear={clearSelectedItems}
+            disabled={isSubmitting}
+          />
 
           <div className="row">
             <div className="col-12 col-sm mb-3">
@@ -249,9 +333,24 @@ const EntriesPage = () => {
         {hasSearched && (
           <>
             <h5 className="mb-2">
-              Results ({entries.length} {entries.length === 1 ? 'entry' : 'entries'} in{' '}
-              {groups.length} {groups.length === 1 ? 'log' : 'logs'})
+              Results ({entries.length} {entries.length === 1 ? 'entry' : 'entries'})
             </h5>
+            {searchedFilter.byItem && !!totals.length && (
+              <div className="d-flex flex-wrap gap-2 mb-2">
+                {totals.map((total) => (
+                  <span
+                    key={total._id}
+                    className="badge badge-totals text-bg-light border fw-normal text-wrap text-start"
+                  >
+                    {total.name}{': '}
+                    <span className="fw-semibold">
+                      {formatQuantity(total.quantity)} {total.quantityType}
+                    </span>{' '}
+                    
+                  </span>
+                ))}
+              </div>
+            )}
             {!entries.length && (
               <p className="text-muted">No entries match those filters.</p>
             )}
