@@ -10,27 +10,56 @@ import SelectedItems from '../components/SelectedItems.jsx'
 
 const EMPTY_FILTERS = { enterer: '', productName: '', startDate: '', endDate: '' }
 
-const CSV_HEADERS = ['Date', 'Submitter', 'Item', 'Quantity', 'Notes']
+const BY_DAY_CSV_HEADERS = ['Date', 'Submitter', 'Item', 'Quantity', 'Notes']
+
+// The same five fields, led by Item so the file reads down the item column.
+const BY_ITEM_CSV_HEADERS = ['Item', 'Date', 'Quantity', 'Submitter', 'Notes']
 
 // Six columns rather than the CSV's five: a real workbook can hold a numeric quantity, so
 // the unit splits off into its own column and the Quantity column becomes summable.
-const XLSX_COLUMNS = [
-  {
+//
+// Each column is defined once here and the two groupings below are orderings of it. A width,
+// type or format then lives in exactly one place and the two workbooks cannot drift apart.
+const XLSX_COLUMN = {
+  date: {
     header: headerCell('Date'),
     width: 12,
     cell: (row) => ({ value: toDateCell(row.loggedAt), type: Date, format: 'yyyy-mm-dd' }),
   },
-  { header: headerCell('Submitter'), width: 18, cell: (row) => ({ value: row.submitter }) },
-  { header: headerCell('Item'), width: 28, cell: (row) => ({ value: row.item }) },
-  {
+  submitter: {
+    header: headerCell('Submitter'),
+    width: 18,
+    cell: (row) => ({ value: row.submitter }),
+  },
+  item: { header: headerCell('Item'), width: 28, cell: (row) => ({ value: row.item }) },
+  quantity: {
     header: headerCell('Quantity'),
     width: 10,
     // A real number so Excel can sum it, but displayed the way formatQuantity renders it
     // on the page: grouped thousands, at most the schema's three decimals, no 25.000.
     cell: (row) => ({ value: row.quantity, type: Number, format: '#,##0.###' }),
   },
-  { header: headerCell('Unit'), width: 10, cell: (row) => ({ value: row.unit }) },
-  { header: headerCell('Notes'), width: 40, cell: (row) => ({ value: row.notes }) },
+  unit: { header: headerCell('Unit'), width: 10, cell: (row) => ({ value: row.unit }) },
+  notes: { header: headerCell('Notes'), width: 40, cell: (row) => ({ value: row.notes }) },
+}
+
+const BY_DAY_XLSX_COLUMNS = [
+  XLSX_COLUMN.date,
+  XLSX_COLUMN.submitter,
+  XLSX_COLUMN.item,
+  XLSX_COLUMN.quantity,
+  XLSX_COLUMN.unit,
+  XLSX_COLUMN.notes,
+]
+
+// Led by Item to match BY_ITEM_CSV_HEADERS, with Unit kept beside the Quantity it qualifies.
+const BY_ITEM_XLSX_COLUMNS = [
+  XLSX_COLUMN.item,
+  XLSX_COLUMN.date,
+  XLSX_COLUMN.quantity,
+  XLSX_COLUMN.unit,
+  XLSX_COLUMN.submitter,
+  XLSX_COLUMN.notes,
 ]
 
 // Local calendar day, deliberately not toISOString(): that is UTC, so an entry logged at
@@ -193,11 +222,30 @@ const EntriesPage = () => {
 
   // CSV stays five columns with the quantity and unit combined, as it always was — plain
   // text has no numeric cell to gain by splitting them.
-  const csvRows = exportRows.map((row) => [
+  const byDayCsvRows = exportRows.map((row) => [
     toIsoDate(row.loggedAt),
     row.submitter,
     row.item,
     `${row.quantity} ${row.unit}`.trim(),
+    row.notes,
+  ])
+
+  // Item first, then newest within each item, so an item's entries read as one block. Sorted
+  // once and shared by the By Item CSV and workbook, so the two cannot disagree on order.
+  // Copied before sorting: exportRows feeds the By Day exports, and Array.prototype.sort
+  // mutates in place — sorting it directly would silently reorder those too. The date
+  // tiebreaker is explicit rather than leaning on exportRows already being newest-first plus
+  // a stable sort; that holds, but it would be an invisible dependency on an ordering
+  // established forty lines away.
+  const byItemRows = [...exportRows].sort(
+    (a, b) => a.item.localeCompare(b.item) || new Date(b.loggedAt) - new Date(a.loggedAt)
+  )
+
+  const byItemCsvRows = byItemRows.map((row) => [
+    row.item,
+    toIsoDate(row.loggedAt),
+    `${row.quantity} ${row.unit}`.trim(),
+    row.submitter,
     row.notes,
   ])
 
@@ -247,24 +295,36 @@ const EntriesPage = () => {
   // The button's disabled guard already rules out an empty export, so there is nothing
   // to check here. toIsoDate is the same local-day helper the Date column uses, so the
   // filename cannot disagree with the contents by a day.
-  const onExportCsv = () => {
-    downloadCsv(`waste-log-${todayIso()}.csv`, toCsv(CSV_HEADERS, csvRows))
+  const onExportCsvByDay = () => {
+    downloadCsv(`waste-log-by-day-${todayIso()}.csv`, toCsv(BY_DAY_CSV_HEADERS, byDayCsvRows))
     toast.success(exportedMessage(exportRows.length))
   }
 
-  // Unlike the CSV path this is async — the browser build zips in a Web Worker — so it
+  const onExportCsvByItem = () => {
+    downloadCsv(
+      `waste-log-by-item-${todayIso()}.csv`,
+      toCsv(BY_ITEM_CSV_HEADERS, byItemCsvRows)
+    )
+    toast.success(exportedMessage(exportRows.length))
+  }
+
+  // Unlike the CSV paths this is async — the browser build zips in a Web Worker — so it
   // needs a guard against a second click and a catch, or a failure would pass silently.
-  const onExportXlsx = async () => {
+  // Both groupings share it rather than each carrying its own copy of that guard.
+  const exportXlsx = async (suffix, columns, rows) => {
     setIsExporting(true)
     try {
-      await downloadXlsx(`waste-log-${todayIso()}.xlsx`, XLSX_COLUMNS, exportRows)
-      toast.success(exportedMessage(exportRows.length))
+      await downloadXlsx(`waste-log-${suffix}-${todayIso()}.xlsx`, columns, rows)
+      toast.success(exportedMessage(rows.length))
     } catch (err) {
       toast.error(err.message)
     } finally {
       setIsExporting(false)
     }
   }
+
+  const onExportXlsxByDay = () => exportXlsx('by-day', BY_DAY_XLSX_COLUMNS, exportRows)
+  const onExportXlsxByItem = () => exportXlsx('by-item', BY_ITEM_XLSX_COLUMNS, byItemRows)
 
   return (
     <div className="container py-4">
@@ -369,23 +429,77 @@ const EntriesPage = () => {
             >
               Clear
             </button>
-            {/* type="button" keeps these from submitting the search form they sit inside. */}
-            <button
-              type="button"
-              className="btn btn-success ms-auto"
-              onClick={onExportCsv}
-              disabled={isSubmitting || isExporting || !entries.length}
-            >
-              Export CSV
-            </button>
-            <button
-              type="button"
-              className="btn btn-success"
-              onClick={onExportXlsx}
-              disabled={isSubmitting || isExporting || !entries.length}
-            >
-              {isExporting ? 'Exporting...' : 'Export XLSX'}
-            </button>
+            {/* data-bs-toggle is a deliberate exception to the React-state rule for
+                collapsible UI. That rule exists because Bootstrap mutates .show directly on
+                rows reused across searches, leaving an open state React never resets; a menu
+                closes on selection or outside click and has no such lifetime. Bootstrap's JS
+                is already imported in main.jsx for the navbar, and its dropdown data-api is
+                delegated at document, so React-rendered markup needs no initialisation.
+                ms-auto sits on the wrapper, not the button: the wrapper is the flex child
+                now, and it is what has to be pushed right. */}
+            <div className="dropdown ms-auto">
+              <button
+                type="button"
+                className="btn btn-success dropdown-toggle"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                disabled={isSubmitting || isExporting || !entries.length}
+              >
+                Export CSV
+              </button>
+              {/* -end so the menu right-aligns under a right-aligned button rather than
+                  overflowing the container at phone width. type="button" is load-bearing
+                  here: the items sit inside the search form, and without it a click would
+                  submit the form and re-run the search on every export. .dropdown-item is
+                  not .btn, so the menu escapes the custom.scss rule that repaints every .btn
+                  maize on hover. */}
+              <ul className="dropdown-menu dropdown-menu-end">
+                <li>
+                  {/* Both are one row per entry with the same five fields — they differ only
+                      in column order and row ordering. */}
+                  <button type="button" className="dropdown-item" onClick={onExportCsvByDay}>
+                    By Day
+                  </button>
+                </li>
+                <li>
+                  <button type="button" className="dropdown-item" onClick={onExportCsvByItem}>
+                    By Item
+                  </button>
+                </li>
+              </ul>
+            </div>
+            {/* Mirrors the CSV dropdown above, including the data-bs-toggle exception
+                reasoned there. No ms-auto: the CSV wrapper carries it and pushes the pair
+                right. */}
+            <div className="dropdown">
+              <button
+                type="button"
+                className="btn btn-success dropdown-toggle"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                disabled={isSubmitting || isExporting || !entries.length}
+              >
+                {isExporting ? 'Exporting...' : 'Export XLSX'}
+              </button>
+              <ul className="dropdown-menu dropdown-menu-end">
+                <li>
+                  {/* Same rows and same six typed columns as each other — they differ only
+                      in column order and row ordering, matching the CSV pair above. */}
+                  <button type="button" className="dropdown-item" onClick={onExportXlsxByDay}>
+                    By Day
+                  </button>
+                </li>
+                <li>
+                  <button
+                    type="button"
+                    className="dropdown-item"
+                    onClick={onExportXlsxByItem}
+                  >
+                    By Item
+                  </button>
+                </li>
+              </ul>
+            </div>
           </div>
         </form>
 
