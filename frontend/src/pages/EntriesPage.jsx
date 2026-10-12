@@ -5,6 +5,8 @@ import toast from 'react-hot-toast'
 import { getItems, searchEntries } from '../api/client.js'
 import ItemCombobox from '../components/ItemCombobox.jsx'
 import { downloadCsv, toCsv } from '../utils/csv.js'
+import { downloadWeeklyReportPdf } from '../utils/pdf.js'
+import { formatQuantity, toIsoDate, weeklyRange } from '../utils/report.js'
 import { downloadXlsx, headerCell, toDateCell } from '../utils/xlsx.js'
 import SelectedItems from '../components/SelectedItems.jsx'
 
@@ -61,15 +63,6 @@ const BY_ITEM_XLSX_COLUMNS = [
   XLSX_COLUMN.submitter,
   XLSX_COLUMN.notes,
 ]
-
-// Local calendar day, deliberately not toISOString(): that is UTC, so an entry logged at
-// 8pm Eastern would land on the following date — and disagree with both the date-range
-// filters and the grouped cards, which are local (see groupEntries).
-const toIsoDate = (value) => {
-  const at = new Date(value)
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())}`
-}
 
 // Deliberately module scope: react-hooks/purity flags a Date.now() call written inside
 // the component, since it cannot tell the enclosing handler only runs on click.
@@ -156,9 +149,6 @@ const totalByItem = (entries, itemsById, selectedItems) => {
   )
 }
 
-// Round to the schema's precision, drop trailing zeros, and group thousands: 25, not
-// 25.000; 1,234.5, not 1234.5000000001.
-const formatQuantity = (value) => Number(value.toFixed(3)).toLocaleString()
 
 const EntriesPage = () => {
   const [entries, setEntries] = useState([])
@@ -171,6 +161,7 @@ const EntriesPage = () => {
   // resets.
   const [expandedRows, setExpandedRows] = useState(() => new Set())
   const [isExporting, setIsExporting] = useState(false)
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false)
   // Items picked from the dropdown. Kept out of the form because it is a list of
   // objects rather than a field value, matching LandingPage's staged rows.
   const [selectedItems, setSelectedItems] = useState([])
@@ -326,10 +317,44 @@ const EntriesPage = () => {
   const onExportXlsxByDay = () => exportXlsx('by-day', BY_DAY_XLSX_COLUMNS, exportRows)
   const onExportXlsxByItem = () => exportXlsx('by-item', BY_ITEM_XLSX_COLUMNS, byItemRows)
 
+  // The past week, not the current results: it runs its own search and ignores the filters
+  // above. Async like exportXlsx, so it needs the same double-click guard and a catch.
+  const onGenerateWeeklyReport = async () => {
+    setIsGeneratingReport(true)
+    try {
+      const range = weeklyRange()
+      const found = await searchEntries({ startDate: range.startDate, endDate: range.endDate })
+      if (!found.length) {
+        toast('No entries in the past 7 days.')
+        return
+      }
+      await downloadWeeklyReportPdf(`waste-log-weekly-${todayIso()}.pdf`, found, itemsById, range)
+      toast.success('Weekly report generated.')
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setIsGeneratingReport(false)
+    }
+  }
+
   return (
     <div className="container py-4">
       <div className="w-100 w-xl-50 mx-auto">
-        <h2 className="mb-3">Entries</h2>
+        {/* Independent of the search above: the report covers the past week, not the
+            current results, so it is never gated on entries.length. */}
+        <div className="d-flex justify-content-between my-3">
+          <h2 className="">Entries</h2>
+          <button
+            type="button"
+            className="btn btn-success "
+            onClick={onGenerateWeeklyReport}
+            disabled={isGeneratingReport}
+          >
+            {isGeneratingReport ? 'Generating...' : 'Generate Weekly Report'}
+          </button>
+        </div>
+        
+        
 
         <form onSubmit={handleSubmit(runSearch)} noValidate className="mb-4">
           <div className="mb-3">
@@ -415,90 +440,95 @@ const EntriesPage = () => {
             </div>
           </div>
 
-          {/* flex-wrap: four controls do not fit at phone width, and the exports should
-              drop to their own line rather than overflow the container. */}
+          {/* Each group below is one flex item of this outer row, so at phone width the
+              groups wrap as whole units — Search/Clear on one line, both exports together
+              on the next — instead of the four buttons wrapping individually. */}
           <div className="d-flex flex-wrap gap-2">
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
-              {isSubmitting ? 'Searching...' : 'Search'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-outline-secondary"
-              onClick={onClear}
-              disabled={isSubmitting}
-            >
-              Clear
-            </button>
+            <div className="d-flex gap-2">
+              <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+                {isSubmitting ? 'Searching...' : 'Search'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline-secondary"
+                onClick={onClear}
+                disabled={isSubmitting}
+              >
+                Clear
+              </button>
+            </div>
             {/* data-bs-toggle is a deliberate exception to the React-state rule for
                 collapsible UI. That rule exists because Bootstrap mutates .show directly on
                 rows reused across searches, leaving an open state React never resets; a menu
                 closes on selection or outside click and has no such lifetime. Bootstrap's JS
                 is already imported in main.jsx for the navbar, and its dropdown data-api is
                 delegated at document, so React-rendered markup needs no initialisation.
-                ms-auto sits on the wrapper, not the button: the wrapper is the flex child
-                now, and it is what has to be pushed right. */}
-            <div className="dropdown ms-auto">
-              <button
-                type="button"
-                className="btn btn-success dropdown-toggle"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-                disabled={isSubmitting || isExporting || !entries.length}
-              >
-                Export CSV
-              </button>
-              {/* -end so the menu right-aligns under a right-aligned button rather than
-                  overflowing the container at phone width. type="button" is load-bearing
-                  here: the items sit inside the search form, and without it a click would
-                  submit the form and re-run the search on every export. .dropdown-item is
-                  not .btn, so the menu escapes the custom.scss rule that repaints every .btn
-                  maize on hover. */}
-              <ul className="dropdown-menu dropdown-menu-end">
-                <li>
-                  {/* Both are one row per entry with the same five fields — they differ only
-                      in column order and row ordering. */}
-                  <button type="button" className="dropdown-item" onClick={onExportCsvByDay}>
-                    By Day
-                  </button>
-                </li>
-                <li>
-                  <button type="button" className="dropdown-item" onClick={onExportCsvByItem}>
-                    By Item
-                  </button>
-                </li>
-              </ul>
-            </div>
-            {/* Mirrors the CSV dropdown above, including the data-bs-toggle exception
-                reasoned there. No ms-auto: the CSV wrapper carries it and pushes the pair
-                right. */}
-            <div className="dropdown">
-              <button
-                type="button"
-                className="btn btn-success dropdown-toggle"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-                disabled={isSubmitting || isExporting || !entries.length}
-              >
-                {isExporting ? 'Exporting...' : 'Export XLSX'}
-              </button>
-              <ul className="dropdown-menu dropdown-menu-end">
-                <li>
-                  {/* Same rows and same six typed columns as each other — they differ only
-                      in column order and row ordering, matching the CSV pair above. */}
-                  <button type="button" className="dropdown-item" onClick={onExportXlsxByDay}>
-                    By Day
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    className="dropdown-item"
-                    onClick={onExportXlsxByItem}
-                  >
-                    By Item
-                  </button>
-                </li>
-              </ul>
+                ms-auto sits on this group wrapper, not an individual dropdown: it pushes the
+                whole export pair right on wide screens, and right-aligns them on their own
+                line when the group wraps below Search/Clear on mobile. */}
+            <div className="d-flex flex-wrap gap-2 ms-auto">
+              <div className="dropdown">
+                <button
+                  type="button"
+                  className="btn btn-success dropdown-toggle"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                  disabled={isSubmitting || isExporting || !entries.length}
+                >
+                  Export CSV
+                </button>
+                {/* -end so the menu right-aligns under a right-aligned button rather than
+                    overflowing the container at phone width. type="button" is load-bearing
+                    here: the items sit inside the search form, and without it a click would
+                    submit the form and re-run the search on every export. .dropdown-item is
+                    not .btn, so the menu escapes the custom.scss rule that repaints every .btn
+                    maize on hover. */}
+                <ul className="dropdown-menu dropdown-menu-end">
+                  <li>
+                    {/* Both are one row per entry with the same five fields — they differ only
+                        in column order and row ordering. */}
+                    <button type="button" className="dropdown-item" onClick={onExportCsvByDay}>
+                      By Day
+                    </button>
+                  </li>
+                  <li>
+                    <button type="button" className="dropdown-item" onClick={onExportCsvByItem}>
+                      By Item
+                    </button>
+                  </li>
+                </ul>
+              </div>
+              {/* Mirrors the CSV dropdown above, including the data-bs-toggle exception
+                  reasoned there. */}
+              <div className="dropdown">
+                <button
+                  type="button"
+                  className="btn btn-success dropdown-toggle"
+                  data-bs-toggle="dropdown"
+                  aria-expanded="false"
+                  disabled={isSubmitting || isExporting || !entries.length}
+                >
+                  {isExporting ? 'Exporting...' : 'Export XLSX'}
+                </button>
+                <ul className="dropdown-menu dropdown-menu-end">
+                  <li>
+                    {/* Same rows and same six typed columns as each other — they differ only
+                        in column order and row ordering, matching the CSV pair above. */}
+                    <button type="button" className="dropdown-item" onClick={onExportXlsxByDay}>
+                      By Day
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      type="button"
+                      className="dropdown-item"
+                      onClick={onExportXlsxByItem}
+                    >
+                      By Item
+                    </button>
+                  </li>
+                </ul>
+              </div>
             </div>
           </div>
         </form>
